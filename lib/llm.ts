@@ -13,48 +13,11 @@ export interface LlmProvider {
 }
 
 class GeminiProvider implements LlmProvider {
-  private async callGemini(payload: unknown): Promise<any> {
-    const preferred = process.env.GEMINI_MODEL?.trim();
-    const candidates = [
-      preferred,
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash'
-    ].filter(Boolean) as string[];
-
-    let lastError = 'Unknown Gemini error';
-
-    for (const model of candidates) {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }
-      );
-
-      if (res.ok) {
-        return res.json();
-      }
-
-      const txt = await res.text();
-      lastError = `model=${model} -> ${txt}`;
-
-      // Try another model on NOT_FOUND/model-related errors.
-      if (!txt.includes('NOT_FOUND') && !txt.toLowerCase().includes('not found')) {
-        break;
-      }
-    }
-
-    throw new Error(`Gemini error: ${lastError}`);
-  }
-
   async respond(messages: ChatMessage[], partial: ExtractedMeeting): Promise<LlmResult> {
     const system = `You are Captain Calendork, a goofy-but-professional scheduling assistant.
 Gather attendee name, attendee email, preferred datetime, and optional title.
 Ask natural follow-up questions when details are missing.
-When all required fields are present, summarize and ask explicitly for confirmation (say "confirm" or "yes schedule it").`;
+When all required fields are present, summarize and ask explicitly for confirmation (say \"confirm\" or \"yes schedule it\").`;
 
     const convoText = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
@@ -101,7 +64,21 @@ When all required fields are present, summarize and ask explicitly for confirmat
       }
     };
 
-    const data = await this.callGemini(payload);
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Gemini error: ${txt}`);
+    }
+
+    const data = await res.json();
     const candidate = data.candidates?.[0];
     const parts = candidate?.content?.parts || [];
     const fn = parts.find((p: any) => p.functionCall)?.functionCall;
