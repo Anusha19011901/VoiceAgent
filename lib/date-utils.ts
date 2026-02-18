@@ -1,4 +1,4 @@
-import * as chrono from 'chrono-node';
+import chrono from 'chrono-node';
 
 const DEFAULT_TIMEZONE = 'America/New_York';
 
