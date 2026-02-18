@@ -13,95 +13,11 @@ export interface LlmProvider {
 }
 
 class GeminiProvider implements LlmProvider {
-  private readonly endpointVersions = ['v1beta', 'v1'];
-
-  private async getAvailableModels(): Promise<string[]> {
-    for (const version of this.endpointVersions) {
-      const res = await fetch(`https://generativelanguage.googleapis.com/${version}/models?key=${env.geminiApiKey}`);
-      if (!res.ok) continue;
-
-      const data = await res.json();
-      const models = (data.models || []) as Array<{ name?: string; supportedGenerationMethods?: string[] }>;
-
-      const names = models
-        .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
-        .map((m) => (m.name || '').replace(/^models\//, ''))
-        .filter(Boolean);
-
-      if (names.length) return names;
-    }
-
-    return [];
-  }
-
-  private async callGemini(payload: unknown): Promise<any> {
-    const preferredRaw = process.env.GEMINI_MODEL?.trim();
-    const preferred = preferredRaw?.replace(/^models\//, '');
-    const staticCandidates = [
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-flash-latest',
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-exp',
-      'gemini-2.0-flash-lite',
-      'gemini-2.0-pro-exp'
-    ];
-
-    const available = await this.getAvailableModels();
-    const availableSet = new Set(available);
-
-    const candidates = [
-      ...(preferred && (!available.length || availableSet.has(preferred)) ? [preferred] : []),
-      ...(available.length ? available : staticCandidates)
-    ];
-
-    const dedupedCandidates = [...new Set(candidates)];
-
-    const errors: string[] = [];
-
-    for (const model of dedupedCandidates) {
-      for (const version of this.endpointVersions) {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${env.geminiApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }
-        );
-
-        if (res.ok) {
-          return res.json();
-        }
-
-        const txt = await res.text();
-        errors.push(`version=${version}, model=${model} -> ${txt}`);
-
-        const lower = txt.toLowerCase();
-        const shouldTryAnother =
-          txt.includes('NOT_FOUND') || lower.includes('not found') || lower.includes('is not supported');
-
-        if (!shouldTryAnother) {
-          throw new Error(
-            `Gemini error while trying model=${model} on ${version}. ` +
-              `Set GEMINI_MODEL to one available in your account. Details: ${txt}`
-          );
-        }
-      }
-    }
-
-    throw new Error(
-      `Gemini error after trying ${dedupedCandidates.length} model(s). ` +
-        `GEMINI_MODEL=${preferred || 'unset'}; discovered=${available.length}. ` +
-        `Set GEMINI_MODEL to one available in your account. Details: ${errors.join(' | ')}`
-    );
-  }
-
   async respond(messages: ChatMessage[], partial: ExtractedMeeting): Promise<LlmResult> {
     const system = `You are Captain Calendork, a goofy-but-professional scheduling assistant.
 Gather attendee name, attendee email, preferred datetime, and optional title.
 Ask natural follow-up questions when details are missing.
-When all required fields are present, summarize and ask explicitly for confirmation (say "confirm" or "yes schedule it").`;
+When all required fields are present, summarize and ask explicitly for confirmation (say \"confirm\" or \"yes schedule it\").`;
 
     const convoText = messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
@@ -148,7 +64,21 @@ When all required fields are present, summarize and ask explicitly for confirmat
       }
     };
 
-    const data = await this.callGemini(payload);
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Gemini error: ${txt}`);
+    }
+
+    const data = await res.json();
     const candidate = data.candidates?.[0];
     const parts = candidate?.content?.parts || [];
     const fn = parts.find((p: any) => p.functionCall)?.functionCall;
