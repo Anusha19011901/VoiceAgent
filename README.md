@@ -53,23 +53,11 @@ Optional:
 1. Create/select a Google Cloud project.
 2. Enable **Google Calendar API**.
 3. Configure OAuth consent screen (External/testing is fine).
-   - If app is in **Testing** mode, add yourself under **Test users**.
-   - On scopes, add `.../auth/calendar.events`.
 4. Create OAuth 2.0 Client ID (Web application).
 5. Authorized redirect URIs:
    - `http://localhost:3000/api/google/callback`
    - `https://YOUR-VERCEL-DOMAIN.vercel.app/api/google/callback`
 6. Put client ID/secret in env vars.
-
-### Troubleshooting Google OAuth
-- **Error 403: access_denied** with message like _"app has not completed Google verification"_:
-  - This is expected for unverified apps in testing.
-  - In Google Cloud Console -> OAuth consent screen -> **Audience/Test users**, add the exact Google account email you are signing in with.
-  - Ensure OAuth app **Publishing status** is `Testing` (or `In production` after verification).
-  - Retry Google connect flow in `/connect-google`.
-- **redirect_uri_mismatch**:
-  - Make sure `GOOGLE_REDIRECT_URI` exactly matches one Authorized redirect URI.
-  - Keep scheme/host/port/path exact (including `http://localhost:3000/api/google/callback`).
 
 ## Local run
 ```bash
