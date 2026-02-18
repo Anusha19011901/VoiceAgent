@@ -6,7 +6,7 @@ import { DEFAULT_TZ } from '@/lib/date-utils';
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseServerClient();
     const {
       data: { user }
     } = await supabase.auth.getUser();

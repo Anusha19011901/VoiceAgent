@@ -3,7 +3,7 @@ import { getOAuth2Client } from '@/lib/google';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 
 export async function GET() {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
