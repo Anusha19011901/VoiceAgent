@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage, ExtractedMeeting } from '@/types/meeting';
 
 declare global {
@@ -19,24 +19,17 @@ export default function VoiceAgent() {
   const [status, setStatus] = useState('Idle');
   const [typedInput, setTypedInput] = useState('');
   const [eventLink, setEventLink] = useState<string | null>(null);
-  const [speechError, setSpeechError] = useState<string | null>(null);
-  const [supportsSpeech, setSupportsSpeech] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
 
   const recognitionRef = useRef<any>(null);
-  const userGestureEnabledRef = useRef(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-    setSupportsSpeech(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
+  const supportsSpeech = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
   }, []);
 
   const speak = (text: string) => {
     const u = new SpeechSynthesisUtterance(text);
     u.onend = () => {
-      if (supportsSpeech && userGestureEnabledRef.current) {
-        startListening();
-      }
+      if (supportsSpeech) startListening();
     };
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(u);
@@ -49,10 +42,8 @@ export default function VoiceAgent() {
 
   const startListening = () => {
     if (!supportsSpeech) return;
-
-    setSpeechError(null);
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = recognitionRef.current ?? new SR();
+    const recognition = new SR();
     recognition.lang = 'en-US';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
@@ -63,29 +54,13 @@ export default function VoiceAgent() {
       await handleUtterance(transcript);
     };
 
-    recognition.onend = () => {
-      setIsListening(false);
-      setStatus('Idle');
-    };
-    recognition.onerror = (event: any) => {
-      setIsListening(false);
-      const errorType = event?.error ? ` (${event.error})` : '';
-      const msg = `Speech recognition issue${errorType}. Try typed input or press Start Mic again.`;
-      setSpeechError(msg);
-      setStatus(msg);
-    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setStatus('Speech recognition issue. Try typed input.');
 
     recognitionRef.current = recognition;
-    try {
-      recognition.start();
-      setIsListening(true);
-      setStatus('Listening...');
-    } catch {
-      setIsListening(false);
-      const msg = `Could not start speech recognition. Try typed input or press Start Mic again.`;
-      setSpeechError(msg);
-      setStatus(msg);
-    }
+    recognition.start();
+    setIsListening(true);
+    setStatus('Listening...');
   };
 
   const stopListening = () => {
@@ -147,48 +122,33 @@ export default function VoiceAgent() {
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        {!isMounted ? (
-          <button disabled className="rounded-full bg-brand/60 px-5 py-3 font-semibold cursor-not-allowed">
-            Start Mic
-          </button>
-        ) : supportsSpeech ? (
+        {supportsSpeech ? (
           <button
-            onClick={() => {
-              userGestureEnabledRef.current = true;
-              if (isListening) {
-                stopListening();
-                return;
-              }
-              startListening();
-            }}
+            onClick={isListening ? stopListening : startListening}
             className="rounded-full bg-brand px-5 py-3 font-semibold"
           >
             {isListening ? 'Stop Mic' : 'Start Mic'}
           </button>
         ) : (
-          <p className="text-sm text-amber-300">Speech recognition is not supported in this browser. Use typed input below.</p>
+          <div className="w-full flex gap-2">
+            <input
+              className="flex-1 rounded bg-slate-800 p-2"
+              value={typedInput}
+              onChange={(e) => setTypedInput(e.target.value)}
+              placeholder="SpeechRecognition unsupported. Type here..."
+            />
+            <button
+              className="rounded bg-brand px-4"
+              onClick={() => {
+                if (!typedInput.trim()) return;
+                handleUtterance(typedInput.trim());
+                setTypedInput('');
+              }}
+            >
+              Send
+            </button>
+          </div>
         )}
-      </div>
-
-      {speechError && <p className="text-sm text-amber-300">{speechError}</p>}
-
-      <div className="w-full flex gap-2">
-        <input
-          className="flex-1 rounded bg-slate-800 p-2"
-          value={typedInput}
-          onChange={(e) => setTypedInput(e.target.value)}
-          placeholder={supportsSpeech ? 'Type if mic has trouble...' : 'SpeechRecognition unsupported. Type here...'}
-        />
-        <button
-          className="rounded bg-brand px-4"
-          onClick={() => {
-            if (!typedInput.trim()) return;
-            handleUtterance(typedInput.trim());
-            setTypedInput('');
-          }}
-        >
-          Send
-        </button>
       </div>
 
       <p className="text-sm text-slate-300">Status: {status}</p>
