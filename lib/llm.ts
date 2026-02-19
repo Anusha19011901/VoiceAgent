@@ -1,3 +1,5 @@
+
+
 import { env } from './env';
 import type { ChatMessage, ExtractedMeeting } from '@/types/meeting';
 import { parseNaturalDateToISO } from './date-utils';
@@ -65,7 +67,7 @@ When all required fields are present, summarize and ask explicitly for confirmat
     };
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${env.geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,3 +139,4 @@ export function getLlmProvider(): LlmProvider {
   if (env.groqApiKey) return new GroqProvider();
   throw new Error('No LLM provider configured.');
 }
+

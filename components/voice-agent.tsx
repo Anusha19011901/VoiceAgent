@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, ExtractedMeeting } from '@/types/meeting';
 
 declare global {
@@ -19,17 +19,42 @@ export default function VoiceAgent() {
   const [status, setStatus] = useState('Idle');
   const [typedInput, setTypedInput] = useState('');
   const [eventLink, setEventLink] = useState<string | null>(null);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [supportsSpeech, setSupportsSpeech] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   const recognitionRef = useRef<any>(null);
-  const supportsSpeech = useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const userGestureEnabledRef = useRef(false);
+  const extractedRef = useRef<ExtractedMeeting>({});
+  const messagesRef = useRef<ChatMessage[]>([{ role: 'assistant', content: initialAssistant }]);
+
+  const appendAssistantMessage = (content: string) => {
+    setMessages((prev) => {
+      const next = [...prev, { role: 'assistant' as const, content }];
+      messagesRef.current = next;
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    setIsMounted(true);
+    setSupportsSpeech(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
   }, []);
+
+  useEffect(() => {
+    extractedRef.current = extracted;
+  }, [extracted]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const speak = (text: string) => {
     const u = new SpeechSynthesisUtterance(text);
     u.onend = () => {
-      if (supportsSpeech) startListening();
+      if (supportsSpeech && userGestureEnabledRef.current) {
+        startListening();
+      }
     };
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(u);
@@ -42,8 +67,10 @@ export default function VoiceAgent() {
 
   const startListening = () => {
     if (!supportsSpeech) return;
+
+    setSpeechError(null);
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SR();
+    const recognition = recognitionRef.current ?? new SR();
     recognition.lang = 'en-US';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
@@ -54,13 +81,29 @@ export default function VoiceAgent() {
       await handleUtterance(transcript);
     };
 
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setStatus('Speech recognition issue. Try typed input.');
+    recognition.onend = () => {
+      setIsListening(false);
+      setStatus('Idle');
+    };
+    recognition.onerror = (event: any) => {
+      setIsListening(false);
+      const errorType = event?.error ? ` (${event.error})` : '';
+      const msg = `Speech recognition issue${errorType}. Try typed input or press Start Mic again.`;
+      setSpeechError(msg);
+      setStatus(msg);
+    };
 
     recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-    setStatus('Listening...');
+    try {
+      recognition.start();
+      setIsListening(true);
+      setStatus('Listening...');
+    } catch {
+      setIsListening(false);
+      const msg = `Could not start speech recognition. Try typed input or press Start Mic again.`;
+      setSpeechError(msg);
+      setStatus(msg);
+    }
   };
 
   const stopListening = () => {
@@ -70,23 +113,25 @@ export default function VoiceAgent() {
   };
 
   const handleUtterance = async (utterance: string) => {
-    const updatedMessages = [...messages, { role: 'user' as const, content: utterance }];
+    const updatedMessages = [...messagesRef.current, { role: 'user' as const, content: utterance }];
     setMessages(updatedMessages);
+    messagesRef.current = updatedMessages;
 
     const confirmText = utterance.toLowerCase();
     const isConfirmation = /\b(confirm|yes schedule it|yes schedule|schedule it|yes)\b/.test(confirmText);
+    const currentExtracted = extractedRef.current;
 
-    if (isConfirmation && extracted.attendeeName && extracted.attendeeEmail && extracted.startISO) {
+    if (isConfirmation && currentExtracted.attendeeName && currentExtracted.attendeeEmail && currentExtracted.startISO) {
       setStatus('Scheduling event...');
       const createRes = await fetch('/api/calendar/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ extracted })
+        body: JSON.stringify({ extracted: currentExtracted })
       });
       const createData = await createRes.json();
       if (!createRes.ok) {
         const failText = `Whoops, calendar creation failed: ${createData.error || 'unknown error'}`;
-        setMessages((prev) => [...prev, { role: 'assistant', content: failText }]);
+        appendAssistantMessage(failText);
         setStatus(failText);
         speak(failText);
         return;
@@ -94,7 +139,7 @@ export default function VoiceAgent() {
 
       setEventLink(createData.htmlLink);
       const success = 'Event scheduled! Your calendar has been officially captained.';
-      setMessages((prev) => [...prev, { role: 'assistant', content: success }]);
+      appendAssistantMessage(success);
       setStatus(success);
       speak(success);
       return;
@@ -104,7 +149,7 @@ export default function VoiceAgent() {
     const llmRes = await fetch('/api/llm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: updatedMessages, partialExtracted: extracted, lastUserUtterance: utterance })
+      body: JSON.stringify({ messages: updatedMessages, partialExtracted: currentExtracted, lastUserUtterance: utterance })
     });
 
     const llmData = await llmRes.json();
@@ -114,7 +159,8 @@ export default function VoiceAgent() {
     }
 
     setExtracted(llmData.extracted);
-    setMessages((prev) => [...prev, { role: 'assistant', content: llmData.assistantText }]);
+    extractedRef.current = llmData.extracted;
+    appendAssistantMessage(llmData.assistantText);
     setStatus('Responded');
     speak(llmData.assistantText);
   };
@@ -122,33 +168,48 @@ export default function VoiceAgent() {
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        {supportsSpeech ? (
+        {!isMounted ? (
+          <button disabled className="rounded-full bg-brand/60 px-5 py-3 font-semibold cursor-not-allowed">
+            Start Mic
+          </button>
+        ) : supportsSpeech ? (
           <button
-            onClick={isListening ? stopListening : startListening}
+            onClick={() => {
+              userGestureEnabledRef.current = true;
+              if (isListening) {
+                stopListening();
+                return;
+              }
+              startListening();
+            }}
             className="rounded-full bg-brand px-5 py-3 font-semibold"
           >
             {isListening ? 'Stop Mic' : 'Start Mic'}
           </button>
         ) : (
-          <div className="w-full flex gap-2">
-            <input
-              className="flex-1 rounded bg-slate-800 p-2"
-              value={typedInput}
-              onChange={(e) => setTypedInput(e.target.value)}
-              placeholder="SpeechRecognition unsupported. Type here..."
-            />
-            <button
-              className="rounded bg-brand px-4"
-              onClick={() => {
-                if (!typedInput.trim()) return;
-                handleUtterance(typedInput.trim());
-                setTypedInput('');
-              }}
-            >
-              Send
-            </button>
-          </div>
+          <p className="text-sm text-amber-300">Speech recognition is not supported in this browser. Use typed input below.</p>
         )}
+      </div>
+
+      {speechError && <p className="text-sm text-amber-300">{speechError}</p>}
+
+      <div className="w-full flex gap-2">
+        <input
+          className="flex-1 rounded bg-slate-800 p-2"
+          value={typedInput}
+          onChange={(e) => setTypedInput(e.target.value)}
+          placeholder={supportsSpeech ? 'Type if mic has trouble...' : 'SpeechRecognition unsupported. Type here...'}
+        />
+        <button
+          className="rounded bg-brand px-4"
+          onClick={() => {
+            if (!typedInput.trim()) return;
+            handleUtterance(typedInput.trim());
+            setTypedInput('');
+          }}
+        >
+          Send
+        </button>
       </div>
 
       <p className="text-sm text-slate-300">Status: {status}</p>
