@@ -1,14 +1,12 @@
-import * as chronoModule from 'chrono-node';
+import type * as ChronoModuleType from 'chrono-node';
 
 const DEFAULT_TIMEZONE = 'America/New_York';
 
-const chronoParseDate =
-  (chronoModule as { parseDate?: (input: string, ref?: Date, opts?: { forwardDate?: boolean }) => Date | null })
-    .parseDate ??
-  (chronoModule as {
-    default?: { parseDate?: (input: string, ref?: Date, opts?: { forwardDate?: boolean }) => Date | null };
-  }).default?.parseDate ??
-  (() => null);
+const chronoModule = require('chrono-node') as typeof ChronoModuleType & {
+  default?: typeof ChronoModuleType;
+};
+
+const chronoParseDate = chronoModule.parseDate ?? chronoModule.default?.parseDate ?? (() => null);
 
 export function parseNaturalDateToISO(input: string): { startISO?: string; endISO?: string } {
   const parsed = chronoParseDate(input, new Date(), { forwardDate: true });
