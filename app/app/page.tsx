@@ -3,7 +3,7 @@ import VoiceAgent from '@/components/voice-agent';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 
 export default async function AppPage() {
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
