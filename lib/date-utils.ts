@@ -1,19 +1,9 @@
-import * as chronoModule from 'chrono-node';
+import chrono from 'chrono-node';
 
 const DEFAULT_TIMEZONE = 'America/New_York';
 
-const chronoParseDate =
-  (chronoModule as { parseDate?: (input: string, ref?: Date, opts?: { forwardDate?: boolean }) => Date | null })
-    .parseDate ??
-  (chronoModule as { default?: { parseDate?: (input: string, ref?: Date, opts?: { forwardDate?: boolean }) => Date | null } })
-    .default?.parseDate;
-
-if (!chronoParseDate) {
-  throw new Error('chrono-node parseDate is unavailable. Check chrono-node version/import interop.');
-}
-
 export function parseNaturalDateToISO(input: string): { startISO?: string; endISO?: string } {
-  const parsed = chronoParseDate(input, new Date(), { forwardDate: true });
+  const parsed = chrono.parseDate(input, new Date(), { forwardDate: true });
   if (!parsed) return {};
 
   const start = new Date(parsed);

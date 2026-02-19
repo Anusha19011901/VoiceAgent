@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
   if (!code) return NextResponse.json({ error: 'Missing code' }, { status: 400 });
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
